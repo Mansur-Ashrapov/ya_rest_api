@@ -4,7 +4,7 @@ $$
         INSERT INTO history_of_item
             (id, url, date, parent_id, size, type)
         VALUES
-            (NEW.id, NEW.url, NEW.date, NEW.parent_id, NEW.size, NEW.type)
+            (NEW.id, NEW.url, NEW.date, NEW.parent_id, NEW.size, NEW.type);
         RETURN NEW;
     END;
 $$
