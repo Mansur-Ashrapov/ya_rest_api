@@ -1,11 +1,11 @@
-from this import s
-from asyncpg.exceptions import UndefinedColumnError, DuplicateColumnError, NoDataFoundError, UniqueViolationError
+from asyncpg.exceptions import NoDataFoundError, UniqueViolationError
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 from app.db.main_items_crud import main_items_crud
 from app.db.history_of_item_crud import history_of_item_crud
 from app.db.schemas import (
-    ItemImportRequest, ItemImportInBase, ItemExport, ItemExportResponse, DateInBase
+    ItemImportRequest, ItemImportInBase, ItemExport, DateInBase, ItemExportResponse
 )
 
 
@@ -20,107 +20,66 @@ responses={
     }
 }
 
-router = APIRouter(responses=responses)
+router = APIRouter()
 
 
 @router.post('/imports', status_code=200)
 async def create_or_update_item(items_in: ItemImportRequest):
-    items = items_in.items
+    items = {item.id:item for item in items_in.items}
     date = items_in.updateDate
-
-
-    id_items = []
-    len_items = 0
-    url_items = []
-    id_parents = []
-    id_items_with_parents = []
-    type_parents = []
-    len_parents = 0
-    for item in items:
-        id_items.append(item.id) 
-        url_items.append(item.url)
-        len_items += 1
-        if item.parentId != None:
-            id_parents.append(item.parentId)
-            id_items_with_parents.append(item.id)
-            type_parents.append(item.type)
-            len_parents += 1
-
-    # проверяем на элементы с одинаковым id и с одинаковыми url
-    id_set = list(set(id_items))
-    url_set = list(set(url_items))
-
-    for idx in range(len_items):
-        if id_items[idx] not in id_items or url_items[idx] not in url_set:
-            raise HTTPException(400, detail='50')
-
-
-    # проверяем наличие родителей в бд и в запросе
-    try:
-        existings_parents = await main_items_crud.check_existing_items(list_ids=id_parents)
-        
-        id_existings_parents = []
-        type_existings_parents = []
-        for exist_parent in existings_parents:
-            id_existings_parents.append(exist_parent.id)
-            type_existings_parents.append(exist_parent.type)
-        if 'FILE' in type_existings_parents:
-            raise HTTPException(400, detail='64')
-    except UndefinedColumnError:
-        id_existings_parents = None
-    except HTTPException as e:
-        raise HTTPException(400, detail=e.detail)
-    except Exception as e:
-        raise Exception(e, '78')
-
-    for idx in range(len_parents):
-        if (id_parents[idx] not in id_existings_parents and id_parents[idx] not in id_items and id_parents[idx] not in id_items_with_parents):
-            raise HTTPException(400, detail='74')
-        
-    # выбираем существующие item в базе для последующего обновления
-    try:
-        id_items_to_update = await main_items_crud.check_existing_items(list_ids=id_items)
-        id_items_to_update = [item.id for item in id_items_to_update]
-    except UndefinedColumnError:
-        id_items_to_update = None
-    except Exception as e:
-        raise Exception(e, '91')
-        
-    # разделяем записи на те которые обновляются и на те которые создаются
-    items_to_create = [ItemImportInBase(**item.dict(), date=date) for item in items if item.id not in id_items_to_update]
-    items_to_update = [ItemImportInBase(**item.dict(), date=date) for item in items if item.id in id_items_to_update] 
-    items_to_create = items_to_create if items_to_create != [] else None
-    items_to_update = items_to_update if items_to_update != [] else None
-
     
+    id_items = []
+    id_parents = []
+    id_folders = []
+    len_items = 0
+    len_parents = 0
+    for id, item in items.items():
+        len_items += 1
+        id_items.append(item.id)
+        if item.type == 'FOLDER':
+            id_folders.append(item.id)
+        if item.parent_id != None:
+            id_parents.append(item.parent_id)
+            len_parents += 1
+        if id == item.parent_id:
+            return JSONResponse(status_code=400, content=responses[400])
 
-    try:    
-        if items_to_create != None:
-            await main_items_crud.post_many_items(items_to_create)
-        if items_to_update != None:
-            await main_items_crud.update_many_items(items_to_update)
+    # проверяем на элементы с одинаковым id
+    id_set = list(set(id_items))
+    for idx in range(len_items):
+        if id_items[idx] not in id_set:
+            return JSONResponse(status_code=400, content=responses[400])
+    
+    # проверяем существование родителей в бд и в запросе
+    try:
+        id_existings_parents = await _get_existings_parents(id_parents=id_parents)
+    except HTTPException as e:
+        return JSONResponse(status_code=e.status_code, content=responses[e.status_code])
+    except Exception:
+        raise HTTPException(500)
+
+    if id_existings_parents != []:
+        id_existings_parents.append([id for id in id_folders])
+        for id, item in items.items():
+            if item.parent_id not in id_existings_parents:
+                return JSONResponse(status_code=400, content=responses[400])
+
         
+    items_schemas = [ItemImportInBase(**item.dict(), date=date) for id, item in items.items()]
+ 
+    try:    
+        await main_items_crud.upsert(items_list=items_schemas)
+    except UniqueViolationError:
+        return JSONResponse(status_code=400, content=responses[400])
+    except Exception as e:
+        raise HTTPException(500)  
+
+    try:
         # обновляем дату родителей 
         for id in id_parents:
-            all_parents_for_that_id = await _get_all_parents(id)
-            for parent in all_parents_for_that_id:
-                parent.date = date
-            await main_items_crud.update_many_items(all_parents_for_that_id)
-            await history_of_item_crud.post_many_items(all_parents_for_that_id)
-            
-
-    except DuplicateColumnError:
-        raise HTTPException(400, detail='97')
-    except UniqueViolationError:
-        raise HTTPException(400, detail='98')
+            await _update_date_parents(date=date, id=id)
     except Exception as e:
-        raise Exception(e, '120')
-    finally:
-        if items_to_create != None:
-            await history_of_item_crud.post_many_items(items_to_create)
-        if items_to_update != None:
-            await history_of_item_crud.post_many_items(items_to_update)
-
+        raise HTTPException(500)
 
 @router.get('/nodes/{id}')
 async def get_nodes(id: str) -> ItemExportResponse:
@@ -128,19 +87,15 @@ async def get_nodes(id: str) -> ItemExportResponse:
     try:
         _ = await main_items_crud.get(item_id=id)
         if _ is not None:
-            item = ItemExportResponse.from_orm(_)
+            item = ItemExport.from_orm(_)
         else: 
-            raise HTTPException(404)
-    except TypeError as e:
-        raise Exception(e)
-    except HTTPException as e:
-        raise HTTPException(status_code=e.status_code, detail=e.detail, headers=e.headers)
+            return JSONResponse(status_code=404, content=responses[404])
     except Exception as e:
-        raise Exception(e)
+        raise HTTPException(500) 
 
     children = await _get_children_for_nodes(id=item.id, item=item)
 
-    return children
+    return ItemExportResponse(**children.dict())
 
 
 @router.delete('/delete/{id}')
@@ -155,21 +110,18 @@ async def delete_node(id: str, date: str):
                     await main_items_crud.delete(child.id)
             
             # обновляем дату родителей 
-            if _.parentId is not None:
-                all_parents_for_that_node = await _get_all_parents(_.parentId)
-                for parent in all_parents_for_that_node:
-                    parent.date = dateIn
-                await main_items_crud.update_many_items(all_parents_for_that_node)
+            if _.parent_id is not None:
+                await _update_date_parents(dateIn, _.parent_id)
 
             await main_items_crud.delete(id)
         else:
             raise NoDataFoundError
     except NoDataFoundError:
-        raise HTTPException(404)
+        return JSONResponse(status_code=404, content=responses[404])
     except Exception as e:
-        raise Exception(e, '159')
+        raise HTTPException(500) 
 
-
+# функция для получения ветки родителей
 async def _get_all_parents(id: str):
     try:
         parents = []
@@ -177,55 +129,42 @@ async def _get_all_parents(id: str):
         parent_id = id
         while all_finded == False:
             _ = await main_items_crud.get(parent_id)
-            parents.append(ItemImportInBase.from_orm(_))
-            if _.parentId is None:
+            if _ is None:
                 all_finded = True
             else:
-                parent_id = _.parentId
+                parents.append(ItemImportInBase.from_orm(_))
+                parent_id = _.parent_id
         return parents
-    except Exception:
+    except Exception as e:
         raise HTTPException(500)
 
 
+async def _get_existings_parents(id_parents: list[str]):
+    existings_parents = await main_items_crud.check_existing_items(list_ids=id_parents)
+    id_existings_parents = []
+    for exist_parent in existings_parents:
+        id_existings_parents.append(exist_parent.id)
+        if 'FILE' == exist_parent.type:
+            raise HTTPException(400)
+    return id_existings_parents
+
 
 async def _get_children_for_delete(id):
-    try:
-        _ = await main_items_crud.get_all_items_in_current_folder(id)
-        children = []
-        len_children = 0
-        for base_item in _:
-            data_item = ItemImportInBase.from_orm(base_item)
-            len_children += 1
-            children.append(data_item)
-    except TypeError as e:
-        raise Exception(e)
-    except Exception as e:
-        raise HTTPException(e)
+    children, len_children = await _get_all_items_in_current_folder(id=id)
     
     if len_children != 0:
         for child in children:
             if child.type == 'FOLDER':
                 children_for_that_child = await _get_children_for_delete(child.id)
                 for _ in children_for_that_child:
-                    children.append(ItemImportInBase.from_orm(_))
+                    children.append(ItemExportResponse.from_orm(_))
 
     return children
 
 
-async def _get_children_for_nodes(id: str, item: ItemExportResponse):
-    try:
-        _ = await main_items_crud.get_all_items_in_current_folder(id)
-        children = []
-        len_children = 0
-        for base_item in _:
-            data_item = ItemExportResponse.from_orm(base_item)
-            len_children += 1
-            children.append(data_item)
-    except TypeError as e:
-        raise Exception(e)
-    except Exception as e:
-        raise HTTPException(e)
-
+async def _get_children_for_nodes(id: str, item: ItemExport):
+    children, len_children = await _get_all_items_in_current_folder(id=id)
+    
     if len_children != 0:
         for idx in range(len_children):
             if children[idx].type == 'FOLDER':
@@ -238,3 +177,23 @@ async def _get_children_for_nodes(id: str, item: ItemExportResponse):
         item.size += item.children[idx].size
 
     return item
+
+
+async def _update_date_parents(date, id):
+    all_parents_for_that_node = await _get_all_parents(id)
+    for parent in all_parents_for_that_node:
+        parent.date = date
+    await main_items_crud.upsert(all_parents_for_that_node)
+
+async def _get_all_items_in_current_folder(id: str):
+    try:
+        _ = await main_items_crud.get_all_items_in_current_folder(id)
+        children = []
+        len_children = 0
+        for base_item in _:
+            data_item = ItemExport.from_orm(base_item)
+            len_children += 1
+            children.append(data_item)
+        return children, len_children
+    except Exception as e:
+        raise HTTPException(500)

@@ -11,7 +11,7 @@ main_items = SA.Table(
     SA.Column('id', SA.String, unique=True),
     SA.Column('url', SA.String, unique=True),
     SA.Column('date', SA.BigInteger),
-    SA.Column('parentId', SA.String),
+    SA.Column('parent_id', SA.String),
     SA.Column('size', SA.Integer),
     SA.Column('type', SA.String),
 
@@ -25,7 +25,7 @@ history_of_item = SA.Table(
     SA.Column('id', SA.String, SA.ForeignKey('main_items.id', onupdate='NO ACTION', ondelete='CASCADE')),
     SA.Column('url', SA.String),
     SA.Column('date', SA.BigInteger),
-    SA.Column('parentId', SA.String),
+    SA.Column('parent_id', SA.String),
     SA.Column('size', SA.Integer),
     SA.Column('type', SA.String)
 )

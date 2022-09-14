@@ -13,18 +13,15 @@ from app.exceptions import ValidationError
 app = FastAPI()
 
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc):
-    return JSONResponse(content=jsonable_encoder({"code": 400, 'message': 'Validation Failed'}),
-                        status_code=status.HTTP_400_BAD_REQUEST)
+# @app.exception_handler(RequestValidationError)
+# async def validation_exception_handler(request, exc):
+#     return JSONResponse(content=jsonable_encoder({"code": 400, 'message': 'Validation Failed'}),
+#                         status_code=status.HTTP_400_BAD_REQUEST)
 
 
 @app.on_event('startup')
 async def startup():
-    try:
-        await database.connect()
-    finally:
-        pass
+    await database.connect()
 
 
 @app.on_event('shutdown')
