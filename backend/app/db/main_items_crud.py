@@ -31,7 +31,7 @@ class MainItemsCrud(CRUD):
     
     async def get_items_by_date(self, date: int):
         date_minus_day = timestamp_minus_day(date)
-        query = self.model.select().filter(self.model.c.date <= date).filter(self.model.c.date >= date)
+        query = self.model.select().filter(self.model.c.date >= date_minus_day).filter(self.model.c.date <= date)
         return await self.db.fetch_all(query=query)
 
         

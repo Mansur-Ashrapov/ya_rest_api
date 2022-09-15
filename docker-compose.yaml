@@ -13,15 +13,15 @@ services:
       - POSTGRES_PASSWORD=pswd_db
       - POSTGRES_DB=dev
       
-  rest_api:
-    build: ./backend
-    restart: "always"
-    ports:
-      - 80:8000
-    environment:
-      - DATABASE_URL=postgresql://user_db:pswd_db@postgres_db:5432/dev
-    depends_on:
-      - postgres_db
+  # rest_api:
+  #   build: ./backend
+  #   restart: "always"
+  #   ports:
+  #     - 80:8000
+  #   environment:
+  #     - DATABASE_URL=postgresql://user_db:pswd_db@postgres_db:5432/dev
+  #   depends_on:
+  #     - postgres_db
 
   
 volumes:

@@ -77,23 +77,32 @@ class ItemExport(ItemBase):
     date: DateInBase
     children: list|None = []
 
+
     @validator('size')
     def validate_size(cls, value):
         if value == None:
             return 0
         return value
     
+    @validator('children')
+    def validate_children(cls, value, values):
+        type = values.get('type')
+        if type == 'FILE':
+            return None
+        return value
+
     class Config:
         orm_mode = True
 
 
 class ItemExportResponse(ItemExport):
-    parentId: str|None = Field(..., alias='parentId')
+    parentId: str|None
     date: str
 
 
-class ItemHistoryUnit(ItemExport):
-    date: DateInBase
+class ItemHistoryUnit(ItemBase):
+    parentId: str|None = Field(..., alias='parentId')
+    date: str
 
     class Config:
         from_orm = True
