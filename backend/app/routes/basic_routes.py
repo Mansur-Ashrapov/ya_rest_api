@@ -5,8 +5,9 @@ from fastapi.responses import JSONResponse
 from app.db.main_items_crud import main_items_crud
 from app.db.history_of_item_crud import history_of_item_crud
 from app.db.schemas import (
-    ItemImportRequest, ItemImportInBase, ItemExport, DateInBase, ItemExportResponse
+    ItemImportRequest, ItemImportInBase, ItemExport,ItemExportResponse
 )
+from app.utils import isoformat_to_timestamp
 
 
 responses={
@@ -58,12 +59,11 @@ async def create_or_update_item(items_in: ItemImportRequest):
     except Exception:
         raise HTTPException(500)
 
-    if id_existings_parents != []:
-        id_existings_parents.append([id for id in id_folders])
+    id_existings_parents.extend(id_folders)
+    if id_existings_parents != [] and id_parents != []:
         for id, item in items.items():
             if item.parent_id not in id_existings_parents:
-                return JSONResponse(status_code=400, content=responses[400])
-
+                raise Exception(id_existings_parents)
         
     items_schemas = [ItemImportInBase(**item.dict(), date=date) for id, item in items.items()]
  
@@ -74,12 +74,6 @@ async def create_or_update_item(items_in: ItemImportRequest):
     except Exception as e:
         raise HTTPException(500)  
 
-    try:
-        # обновляем дату родителей 
-        for id in id_parents:
-            await _update_date_parents(date=date, id=id)
-    except Exception as e:
-        raise HTTPException(500)
 
 @router.get('/nodes/{id}')
 async def get_nodes(id: str) -> ItemExportResponse:
@@ -100,41 +94,17 @@ async def get_nodes(id: str) -> ItemExportResponse:
 
 @router.delete('/delete/{id}')
 async def delete_node(id: str, date: str):
-    dateIn = DateInBase(date=date)
     try:
+        dateIn = isoformat_to_timestamp(date=date)
         _ = await main_items_crud.get(id)
-        if _ is not None:
-            if _.type == "FOLDER":
-                children = await _get_children_for_delete(_.id)
-                for child in children:
-                    await main_items_crud.delete(child.id)
-            
-            # обновляем дату родителей 
-            if _.parent_id is not None:
-                await _update_date_parents(dateIn, _.parent_id)
-
-            await main_items_crud.delete(id)
+        if _ != None:
+            await main_items_crud.custom_delete(id=_.id, parent_id=_.parent_id, date=dateIn)
         else:
-            raise NoDataFoundError
-    except NoDataFoundError:
+            raise HTTPException(404)
+    except HTTPException:
         return JSONResponse(status_code=404, content=responses[404])
-    except Exception as e:
-        raise HTTPException(500) 
-
-# функция для получения ветки родителей
-async def _get_all_parents(id: str):
-    try:
-        parents = []
-        all_finded = False
-        parent_id = id
-        while all_finded == False:
-            _ = await main_items_crud.get(parent_id)
-            if _ is None:
-                all_finded = True
-            else:
-                parents.append(ItemImportInBase.from_orm(_))
-                parent_id = _.parent_id
-        return parents
+    except ValueError:
+        return JSONResponse(status_code=400, content=responses[400])
     except Exception as e:
         raise HTTPException(500)
 
@@ -149,19 +119,6 @@ async def _get_existings_parents(id_parents: list[str]):
     return id_existings_parents
 
 
-async def _get_children_for_delete(id):
-    children, len_children = await _get_all_items_in_current_folder(id=id)
-    
-    if len_children != 0:
-        for child in children:
-            if child.type == 'FOLDER':
-                children_for_that_child = await _get_children_for_delete(child.id)
-                for _ in children_for_that_child:
-                    children.append(ItemExportResponse.from_orm(_))
-
-    return children
-
-
 async def _get_children_for_nodes(id: str, item: ItemExport):
     children, len_children = await _get_all_items_in_current_folder(id=id)
     
@@ -173,17 +130,8 @@ async def _get_children_for_nodes(id: str, item: ItemExport):
 
     item.children = children
 
-    for idx in range(len_children):
-        item.size += item.children[idx].size
-
     return item
 
-
-async def _update_date_parents(date, id):
-    all_parents_for_that_node = await _get_all_parents(id)
-    for parent in all_parents_for_that_node:
-        parent.date = date
-    await main_items_crud.upsert(all_parents_for_that_node)
 
 async def _get_all_items_in_current_folder(id: str):
     try:

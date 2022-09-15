@@ -33,6 +33,12 @@ class MainItemsCrud(CRUD):
         date_minus_day = timestamp_minus_day(date)
         query = self.model.select().filter(self.model.c.date >= date_minus_day).filter(self.model.c.date <= date)
         return await self.db.fetch_all(query=query)
+    
+    async def custom_delete(self, id: str, parent_id: str, date: int):
+        query = (
+            "SELECT custom_delete(:id, :parent_id, :date)"
+        )
+        return await database.execute(query=query, values={'id': id, 'parent_id': parent_id, 'date': date})
 
         
 

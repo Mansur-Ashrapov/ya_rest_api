@@ -11,5 +11,6 @@ class HistoryOfItemCrud(CRUD):
         query = self.model.select().filter(self.model.c.id.in_([id])).filter(self.model.c.date <= dateTo).filter(self.model.c.date >= dateFrom)
         return await self.db.fetch_all(query=query)
 
+    
 
 history_of_item_crud = HistoryOfItemCrud(db=database, model=history_of_item)

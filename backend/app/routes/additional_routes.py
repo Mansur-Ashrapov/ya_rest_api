@@ -31,12 +31,11 @@ async def updates(date: str) -> ItemHistoryResponse:
         if _ != []:
             units = [ItemExport.from_orm(node) for node in _]
             return ItemHistoryResponse(items=[ItemHistoryUnit(**unit.dict()) for unit in units])
-        else: 
-            raise HTTPException(404)
-    except HTTPException as e: 
-        return JSONResponse(status_code=e.status_code, content=responses[404])
+        return {'items':[]}
     except ValueError:
         return JSONResponse(status_code=400, content=responses[400])
+    except Exception:
+        raise HTTPException(500)
 
 
 @router.get('/node/{id}/history')
