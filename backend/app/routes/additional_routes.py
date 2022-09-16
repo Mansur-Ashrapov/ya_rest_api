@@ -54,31 +54,31 @@ async def history_node(id: str, dateStart: str, dateEnd: str):
         return JSONResponse(status_code=400, content=responses[400])
 
 
-async def _get_folder_size(id: str, item: ItemExport):
-    children, len_children = await _get_all_items_in_current_folder(id=id)
+# async def _get_folder_size(id: str, item: ItemExport):
+#     children, len_children = await _get_all_items_in_current_folder(id=id)
     
-    if len_children != 0:
-        for idx in range(len_children):
-            if children[idx].type == 'FOLDER':
-                children[idx].children = []
-                children[idx].children.append(await _get_folder_size(id=children[idx].id, item=children[idx]))
+#     if len_children != 0:
+#         for idx in range(len_children):
+#             if children[idx].type == 'FOLDER':
+#                 children[idx].children = []
+#                 children[idx].children.append(await _get_folder_size(id=children[idx].id, item=children[idx]))
 
-    item.children = children
+#     item.children = children
 
-    for idx in range(len_children):
-        item.size += item.children[idx].size
+#     for idx in range(len_children):
+#         item.size += item.children[idx].size
 
-    return item.size
+#     return item.size
 
-async def _get_all_items_in_current_folder(id: str):
-    try:
-        _ = await main_items_crud.get_all_items_in_current_folder(id)
-        children = []
-        len_children = 0
-        for base_item in _:
-            data_item = ItemExport.from_orm(base_item)
-            len_children += 1
-            children.append(data_item)
-        return children, len_children
-    except Exception as e:
-        raise HTTPException(500)
+# async def _get_all_items_in_current_folder(id: str):
+#     try:
+#         _ = await main_items_crud.get_all_items_in_current_folder(id)
+#         children = []
+#         len_children = 0
+#         for base_item in _:
+#             data_item = ItemExport.from_orm(base_item)
+#             len_children += 1
+#             children.append(data_item)
+#         return children, len_children
+#     except Exception as e:
+#         raise HTTPException(500)
